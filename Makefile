@@ -4,7 +4,7 @@ ASS=vasmm68k_mot
 VLINK=vlink
 STRIP=m68k-amigaos-strip
 
-CFLAGS = -noixemul -O3
+CFLAGS = -noixemul -O3 --std=c99
 LFLAGS = -noixemul
 
 # Allow 040+ instructions to be emitted in runtime detection cases

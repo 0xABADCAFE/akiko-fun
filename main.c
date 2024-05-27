@@ -99,13 +99,13 @@ void free_timer(void) {
 
 void benchmark_rw(void) {
     ULONG total_ticks = 0;
-    ULONG freq = ReadEClock(&clk_begin.ecv);
+    ULONG clock_freq_hz = ReadEClock(&clk_begin.ecv);
     printf(
         "Benchmarking Akiko Read/Write (reg -> hw -> reg) with %d loops, %d bytes per loop.\n"
         "Using EClock, reported rate is %u Hz\n",
         BENCH_INTERATIONS,
         PIXELS_PER_ITERATION,
-        freq
+        clock_freq_hz
     );
 
     for (int i = 1; i <= RUNS; ++i) {
@@ -114,7 +114,7 @@ void benchmark_rw(void) {
         bench_akiko_rw(BENCH_INTERATIONS);
         ReadEClock(&clk_end.ecv);
         ULONG elapsed = (ULONG)(clk_end.ticks - clk_begin.ticks);
-        ULONG elapsed_ms = (elapsed * 1000) / freq;
+        ULONG elapsed_ms = (elapsed * 1000) / clock_freq_hz;
 
         printf(
             "\tBegin:   %llu ticks\n"
@@ -128,7 +128,7 @@ void benchmark_rw(void) {
         total_ticks += elapsed;
     }
 
-    ULONG total_ms = (total_ticks * 1000) / freq;
+    ULONG total_ms = (total_ticks * 1000) / clock_freq_hz;
     printf(
         "\nElapsed: %u ticks, %u ms [%d frames, %u fps]\n",
         total_ticks,
@@ -136,8 +136,84 @@ void benchmark_rw(void) {
         RUNS,
         (RUNS * 1000)/total_ms
     );
-    ULONG64 dividend = (BENCH_INTERATIONS * PIXELS_PER_ITERATION * RUNS) * (ULONG64)freq;
+    ULONG64 dividend = (BENCH_INTERATIONS * PIXELS_PER_ITERATION * RUNS) * (ULONG64)clock_freq_hz;
     printf("\nPerf:    %u bytes/second\n", (ULONG)(dividend/total_ticks));
+}
+
+#define BUFFER_SIZE (BENCH_INTERATIONS * PIXELS_PER_ITERATION)
+#define BUFFER_HEIGHT (BUFFER_SIZE / 320)
+
+// Assumes 320 width, 256 height contiguous planar buffer.
+extern void test_akiko_c2p_320x256_v1(
+    REG(a0, ULONG* from),
+    REG(a1, ULONG* to)
+);
+
+void benchmark_full(void) {
+    puts("Testing Full C2P");
+
+    ULONG total_ticks = 1; // Avoids an ugly zero check for a tiny numeric distortion
+    ULONG clock_freq_hz = ReadEClock(&clk_begin.ecv);
+
+    UBYTE* fast_alloc = AllocVec(BUFFER_SIZE + 16, MEMF_FAST);
+    if (!fast_alloc) {
+        printf("\tFailed to allocate Fast Buffer (needed %d bytes)\n", BUFFER_SIZE + 16);
+        goto fail;
+    }
+
+    UBYTE* chip_alloc = AllocVec(BUFFER_SIZE + 16, MEMF_CHIP);
+    if (!chip_alloc) {
+        printf("\tFailed to allocate Chip Buffer (needed %d bytes)\n", BUFFER_SIZE + 16);
+        goto fail;
+    }
+
+    ULONG* fast_align = (ULONG*)(((ULONG)fast_alloc + 15) & ~15);
+    ULONG* chip_align = (ULONG*)(((ULONG)chip_alloc + 15) & ~15);
+
+    printf(
+        "\tAllocated aligned fast buffer at %p\n\tAllocated aligned chip buffer at %p\n",
+        fast_align,
+        chip_align
+    );
+
+
+    for (int i = 1; i <= RUNS; ++i) {
+        printf("Run %d/%d...\n", i, RUNS);
+        ReadEClock(&clk_begin.ecv);
+        test_akiko_c2p_320x256_v1(fast_align, chip_align);
+        ReadEClock(&clk_end.ecv);
+        ULONG elapsed = (ULONG)(clk_end.ticks - clk_begin.ticks);
+        ULONG elapsed_ms = (elapsed * 1000) / clock_freq_hz;
+
+        printf(
+            "\tBegin:   %llu ticks\n"
+            "\tFinish:  %llu ticks\n"
+            "\tElapsed: %u ticks (%u ms)\n",
+            clk_begin.ticks,
+            clk_end.ticks,
+            elapsed,
+            elapsed_ms
+        );
+        total_ticks += elapsed;
+    }
+
+    ULONG total_ms = (total_ticks * 1000) / clock_freq_hz;
+    printf(
+        "\nElapsed: %u ticks, %u ms [%d frames, %u fps]\n",
+        total_ticks,
+        total_ms,
+        RUNS,
+        (RUNS * 1000)/total_ms
+    );
+    ULONG64 dividend = (BUFFER_SIZE * RUNS) * (ULONG64)clock_freq_hz;
+    printf("\nPerf:    %u bytes/second\n", (ULONG)(dividend/total_ticks));
+fail:
+    if (fast_alloc) {
+        FreeVec(fast_alloc);
+    }
+    if (chip_alloc) {
+        FreeVec(chip_alloc);
+    }
 }
 
 int main(void) {
@@ -146,6 +222,8 @@ int main(void) {
         verify_c2p();
         if (get_timer()) {
             benchmark_rw();
+            puts("\n");
+            benchmark_full();
             free_timer();
         }
     }
