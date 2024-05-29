@@ -14,8 +14,8 @@ AFLAGS += -I../../../../amiga/m68k-amigaos/ndk-include
 VFLAGS = -b amigahunk -sc -l amiga -L m68k-amigaos/ndk/lib/libs
 
 OBJS = main.o \
-	   c2p.o
-
+	   c2p.o \
+	   c2p1x1_8_c5_030_2.o
 akiko: c2p.o
 	$(VLINK) $(VFLAGS) $< -o $@
 
@@ -36,7 +36,3 @@ c/%.o: %.s Makefile
 %.o: %.c Makefile
 	$(CC) $(CFLAGS) -c $< -o $@
 
-
-#############################################################
-#
-#############################################################
