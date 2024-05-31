@@ -268,6 +268,88 @@ _test_akiko_c2p_320x256_v1:
 
     align 4
 
+; Version 1
+; Source in a0
+; Dest in a1
+; Assumes planar buffer is 320x256, contiguously allocated
+    xref _test_akiko_c2p_320x256_v2
+
+_test_akiko_c2p_320x256_v2:
+
+    movem.l d1-d7/a2/a3/a4/a6,-(sp)
+
+    ; back up the inputs
+    move.l  a0,a2
+    move.l  a1,a3
+
+    move.l	_SysBase,a6
+    jsr		_LVOForbid(a6)
+    jsr		_LVODisable(a6)
+
+    move.l  #$00B80038,a0
+    move.w  #2560-1,d0
+    move.l  a3,a1
+
+    ; a0 akiko
+    ; a2 source
+    ;
+.loop:
+    movem.l (a2)+,d1-d7/a4
+    move.l  d1,(a0)
+    move.l  d2,(a0)
+    move.l  d3,(a0)
+    move.l  d4,(a0)
+    move.l  d5,(a0)
+    move.l  d6,(a0)
+    move.l  d7,(a0)
+    move.l  a4,(a0)
+
+    move.l  (a0),d1
+    move.l  (a0),d2
+    move.l  (a0),d3
+    move.l  (a0),d4
+    move.l  (a0),d5
+    move.l  (a0),d6
+    move.l  (a0),d7
+    move.l  (a0),a4
+
+    ; write plane 0
+    move.l  d1,(a1)
+    add.w   #10240,a1
+
+    move.l  d2,(a1)
+    add.w   #10240,a1
+
+    move.l  d3,(a1)
+    add.w   #10240,a1
+
+    move.l  d4,(a1)
+    add.w   #10240,a1
+
+    move.l  d5,(a1)
+    add.w   #10240,a1
+
+    move.l  d6,(a1)
+    add.w   #10240,a1
+
+    move.l  d7,(a1)
+    add.w   #10240,a1
+    add.w   #4,a3
+
+    move.l  a4,(a1)
+    move.l  a3,a1
+    dbra    d0,.loop
+
+    jsr _LVOEnable(a6)
+    jsr _LVOPermit(a6)
+
+    movem.l (sp)+,d1-d7/a2/a3/a4/a6
+    rts
+
+; #############################################################################
+
+    align 4
+
     xdef _init_kalms_c2p_030_320x256
 
 ; d0.w	chunkyx [chunky-pixels]

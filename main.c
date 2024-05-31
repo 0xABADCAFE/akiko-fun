@@ -135,6 +135,11 @@ extern void test_akiko_c2p_320x256_v1(
     REG(a1, ULONG* to)
 );
 
+extern void test_akiko_c2p_320x256_v2(
+    REG(a0, ULONG* from),
+    REG(a1, ULONG* to)
+);
+
 extern void init_kalms_c2p_030_320x256(void);
 
 extern void test_kalms_c2p_030_320x256(
@@ -159,6 +164,10 @@ static TestCase test_cases[] = {
     {
         NULL, test_akiko_c2p_320x256_v1,
         "Akiko C2P (Naive)\n\tChunky read from Fast, planar write to Chip."
+    },
+    {
+        NULL, test_akiko_c2p_320x256_v2,
+        "Akiko C2P (Buffer)\n\tChunky read from Fast, planar write to Chip, register buffer to/from Akiko."
     },
     {
         init_kalms_c2p_030_320x256, test_kalms_c2p_030_320x256,
