@@ -18,7 +18,10 @@ typedef struct {
     ini_function init;
     c2p_function convert;
     char const*  info;
+    ULONG flags;
 } TestCase;
+
+#define TEST_REQ_68030 1UL
 
 typedef union {
     struct EClockVal ecv;
@@ -42,11 +45,15 @@ struct Device* TimerBase = NULL;
 #define AKIKO_C2P_ADDR   (volatile ULONG *)0x00B80038
 #define AKIKO_IDENT      0xCAFE
 
-BOOL have_akiko(void) {
+static BOOL have_akiko(void) {
     return (
         GfxBase->LibNode.lib_Version >= 40 &&
         AKIKO_IDENT == *AKIKO_IDENT_ADDR
     );
+}
+
+static BOOL have_68030(void) {
+    return AFF_68030 == (SysBase->AttnFlags & (AFF_68030|AFF_68040|AFF_68060));
 }
 
 static ULONG test_from[8] = {
@@ -71,21 +78,50 @@ static ULONG test_to[8] = {
     0xABADCAFE
 };
 
+static void reset_verification(void) {
+    for (int i = 0; i < 8; ++i) {
+        test_to[i] = 0xABADCAFE;
+    }
+}
+
+static void show_verification(void) {
+    ULONG expect = 0xF;
+    for (int i = 0; i < 8; ++i, expect <<= 4) {
+        printf(
+            "C[%d]: 0x%08X P[%d]: 0x%08X E[%d]: 0x%08X %s\n",
+            i,
+            test_from[i],
+            i,
+            test_to[i],
+            i,
+            expect,
+            (test_to[i] == expect) ? "PASS" : "FAIL"
+        );
+    }
+}
+
 extern void verify_akiko_c2p(
     REG(a0, ULONG* from),
     REG(a1, ULONG* to)
 );
 
-void verify_c2p(void) {
+extern void verify_akiko_c2p_cacr_fix(
+    REG(a0, ULONG* from),
+    REG(a1, ULONG* to)
+);
+
+static void verify_c2p(void) {
+    puts("Akiko verification test without CACR manipulation");
     verify_akiko_c2p(test_from, test_to);
-    for (int i = 0; i < 8; ++i) {
-        printf(
-            "C[%d]: 0x%08X P[%d]: 0x%08X\n",
-            i,
-            test_from[i],
-            i,
-            test_to[i]
-        );
+    show_verification();
+
+    if (have_68030()) {
+        puts("Akiko verification test with CACR manipulation");
+        reset_verification();
+        verify_akiko_c2p_cacr_fix(test_from, test_to);
+        show_verification();
+    } else {
+        puts("68030 not detected, skippig CACR version");
     }
 }
 
@@ -129,8 +165,18 @@ extern void test_akiko_rw_320x256(
     REG(a1, ULONG* to)
 );
 
+extern void test_akiko_rw_320x256_cacr_fix(
+    REG(a0, ULONG* from),
+    REG(a1, ULONG* to)
+);
+
 
 extern void test_akiko_c2p_320x256_v1(
+    REG(a0, ULONG* from),
+    REG(a1, ULONG* to)
+);
+
+extern void test_akiko_c2p_320x256_v1_cacr_fix(
     REG(a0, ULONG* from),
     REG(a1, ULONG* to)
 );
@@ -139,6 +185,12 @@ extern void test_akiko_c2p_320x256_v2(
     REG(a0, ULONG* from),
     REG(a1, ULONG* to)
 );
+
+extern void test_akiko_c2p_320x256_v2_cacr_fix(
+    REG(a0, ULONG* from),
+    REG(a1, ULONG* to)
+);
+
 
 extern void init_kalms_c2p_030_320x256(void);
 
@@ -151,27 +203,56 @@ extern void test_kalms_c2p_030_320x256(
 static TestCase test_cases[] = {
     {
         NULL, test_copy_320x256,
-        "Copy\n\tVanilla Fast to Chip Copy, 8 longwords at a time."
+        "Copy\n\tVanilla Fast to Chip Copy, 8 longwords at a time.",
+        0
     },
+
     {
         NULL, test_null_c2p_320x256,
-        "Null C2P\n\tChunky read from Fast and planar write to Chip, but no conversion."
+        "Null C2P\n\tChunky read from Fast and planar write to Chip, but no conversion.",
+        0
     },
+
     {
         NULL, test_akiko_rw_320x256,
-        "Akiko C2P (Limit)\n\tRegister to Akiko to Register throughput"
+        "Akiko C2P (Limit)\n\tRegister to Akiko to Register throughput",
+        0
     },
+
+    {
+        NULL, test_akiko_rw_320x256_cacr_fix,
+        "Akiko C2P (Limit)\n\tRegister to Akiko to Register throughput, CACR Write Allocation Disabled.",
+        TEST_REQ_68030
+    },
+
     {
         NULL, test_akiko_c2p_320x256_v1,
-        "Akiko C2P (Naive)\n\tChunky read from Fast, planar write to Chip."
+        "Akiko C2P (Naive)\n\tChunky read from Fast, planar write to Chip.",
+        0
     },
+
+    {
+        NULL, test_akiko_c2p_320x256_v1_cacr_fix,
+        "Akiko C2P (Naive)\n\tChunky read from Fast, planar write to Chip, CACR Write Allocation Disabled.",
+        TEST_REQ_68030
+    },
+
     {
         NULL, test_akiko_c2p_320x256_v2,
-        "Akiko C2P (Buffer)\n\tChunky read from Fast, planar write to Chip, register buffer to/from Akiko."
+        "Akiko C2P (Buffer)\n\tChunky read from Fast, planar write to Chip, register buffer to/from Akiko.",
+        0
     },
+
+    {
+        NULL, test_akiko_c2p_320x256_v2_cacr_fix,
+        "Akiko C2P (Buffer)\n\tChunky read from Fast, planar write to Chip, register buffer to/from Akiko, CACR Write Allocation Disabled.",
+        TEST_REQ_68030
+    },
+
     {
         init_kalms_c2p_030_320x256, test_kalms_c2p_030_320x256,
-        "Kalms C2P (c2p1x1_8_c5_030_2)\n\tChunky read from Fast, planar write to Chip."
+        "Kalms C2P (c2p1x1_8_c5_030_2)\n\tChunky read from Fast, planar write to Chip.",
+        0
     }
 };
 
@@ -199,10 +280,17 @@ void benchmark_test_cases(void) {
         chip_align
     );
 
+    BOOL got_68030 = have_68030();
+
     for (int c = 0; c < sizeof(test_cases)/sizeof(TestCase); ++c) {
         ULONG total_ticks = 1; // Avoids an ugly zero check for a tiny numeric distortion
 
         printf("Case %d: %s\n", c, test_cases[c].info);
+
+        if (!got_68030 && test_cases[c].flags & TEST_REQ_68030) {
+            puts("Skipped, 68030 not detected");
+            continue;
+        }
 
         // If there's any initialisation to be done, do it.
         if (test_cases[c].init) {
