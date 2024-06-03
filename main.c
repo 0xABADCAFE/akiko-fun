@@ -22,6 +22,7 @@ typedef struct {
 } TestCase;
 
 #define TEST_REQ_68030 1UL
+#define TEST_REQ_TO_FAST 2UL
 
 typedef union {
     struct EClockVal ecv;
@@ -253,6 +254,25 @@ static TestCase test_cases[] = {
         init_kalms_c2p_030_320x256, test_kalms_c2p_030_320x256,
         "Kalms C2P (c2p1x1_8_c5_030_2)\n\tChunky read from Fast, planar write to Chip.",
         0
+    },
+
+    {
+        NULL, test_akiko_c2p_320x256_v1_cacr_fix,
+        "Akiko C2P (Naive)\n\tChunky read from Fast, planar write to Fast, CACR Write Allocation Disabled.",
+        TEST_REQ_68030|TEST_REQ_TO_FAST
+    },
+
+    {
+        NULL, test_akiko_c2p_320x256_v2_cacr_fix,
+        "Akiko C2P (Buffer)\n\tChunky read from Fast, planar write to Fast, register buffer to/from Akiko, CACR Write Allocation Disabled.",
+        TEST_REQ_68030|TEST_REQ_TO_FAST
+    },
+
+
+    {
+        init_kalms_c2p_030_320x256, test_kalms_c2p_030_320x256,
+        "Kalms C2P (c2p1x1_8_c5_030_2)\n\tChunky read from Fast, planar write to Fast.",
+        TEST_REQ_TO_FAST
     }
 };
 
@@ -265,18 +285,27 @@ void benchmark_test_cases(void) {
         goto fail;
     }
 
+    UBYTE* fast_alloc_2 = AllocVec(BUFFER_SIZE + 16, MEMF_FAST);
+    if (!fast_alloc_2) {
+        printf("\tFailed to allocate second Fast Buffer (needed %d bytes)\n", BUFFER_SIZE + 16);
+        goto fail;
+    }
+
+
     UBYTE* chip_alloc = AllocVec(BUFFER_SIZE + 16, MEMF_CHIP);
     if (!chip_alloc) {
         printf("\tFailed to allocate Chip Buffer (needed %d bytes)\n", BUFFER_SIZE + 16);
         goto fail;
     }
 
-    ULONG* fast_align = (ULONG*)(((ULONG)fast_alloc + 15) & ~15);
-    ULONG* chip_align = (ULONG*)(((ULONG)chip_alloc + 15) & ~15);
+    ULONG* fast_align   = (ULONG*)(((ULONG)fast_alloc + 15) & ~15);
+    ULONG* chip_align   = (ULONG*)(((ULONG)chip_alloc + 15) & ~15);
+    ULONG* fast_align_2 = (ULONG*)(((ULONG)fast_alloc_2 + 15) & ~15);
 
     printf(
-        "\tAllocated aligned fast buffer at %p\n\tAllocated aligned chip buffer at %p\n",
+        "\tAllocated aligned fast buffers at %p and %p\n\tAllocated aligned chip buffer at %p\n",
         fast_align,
+        fast_align_2,
         chip_align
     );
 
@@ -300,10 +329,12 @@ void benchmark_test_cases(void) {
             puts("\tNo initialisation needed.");
         }
 
+        ULONG* dest = (test_cases[c].flags & TEST_REQ_TO_FAST) ? fast_align_2 : chip_align;
+
         for (int i = 1; i <= RUNS; ++i) {
             printf("\tRun %d/%d...\r", i, RUNS);
             ReadEClock(&clk_begin.ecv);
-            test_cases[c].convert(fast_align, chip_align);
+            test_cases[c].convert(fast_align, dest);
             ReadEClock(&clk_end.ecv);
             total_ticks += (ULONG)(clk_end.ticks - clk_begin.ticks);
         }
@@ -329,6 +360,9 @@ void benchmark_test_cases(void) {
     }
 
 fail:
+    if (fast_alloc_2) {
+        FreeVec(fast_alloc_2);
+    }
     if (fast_alloc) {
         FreeVec(fast_alloc);
     }
